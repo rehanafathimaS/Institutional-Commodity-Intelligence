@@ -47,12 +47,10 @@ df = load_market_data()
 st.sidebar.image("https://cdn-icons-png.flaticon.com/512/2103/2103633.png", width=80)
 st.sidebar.header("🕹️ Analysis Controls")
 
-# Group 1: Time Filters
 st.sidebar.subheader("📅 Time Horizon")
 selected_date = st.sidebar.date_input("Target Date", value=df['date'].max())
 year_input = st.sidebar.number_input("Analysis Year", 1960, 2026, int(selected_date.year))
 
-# Group 2: Asset Selection
 st.sidebar.subheader("📦 Asset Intelligence")
 cat_list = sorted(df['category'].unique())
 selected_cat = st.sidebar.selectbox("Market Category", cat_list)
@@ -60,7 +58,6 @@ selected_cat = st.sidebar.selectbox("Market Category", cat_list)
 comm_list = sorted(df[df['category'] == selected_cat]['commodity_name'].unique())
 selected_comm = st.sidebar.selectbox("Commodity Asset", comm_list)
 
-# Group 3: Market metadata
 units = df[df['commodity_name'] == selected_comm]['unit'].unique()
 st.sidebar.selectbox("Trading Unit", units)
 
@@ -68,21 +65,27 @@ st.sidebar.selectbox("Trading Unit", units)
 comm_df = df[df['commodity_name'] == selected_comm].sort_values('date')
 current_price = comm_df['price_nominal_usd'].iloc[-1]
 
-# Prediction logic
+# --- FIXED PREDICTION LOGIC ---
+# Get last 3 prices for lagging
 last_3_prices = comm_df['price_nominal_usd'].tail(3).values
-scaled_lags = scaler.transform(last_3_prices.reshape(-1, 1)).flatten()
 
-input_x = np.zeros(len(features))
-f_map = {f: i for i, f in enumerate(features)}
-input_x[f_map['lag_1']] = scaled_lags[-1]
-input_x[f_map['lag_2']] = scaled_lags[-2]
-input_x[f_map['rolling_mean_3']] = np.mean(scaled_lags)
+# 1. Create a DataFrame with the exact same 9 columns used in training
+input_df = pd.DataFrame(columns=features)
+input_df.loc[0] = 0  # Initialize everything with 0
 
-cat_key = f"cat_{selected_cat}"
-if cat_key in f_map: input_x[f_map[cat_key]] = 1
+# 2. Fill the lagging features
+input_df['lag_1'] = last_3_prices[-1]
+input_df['lag_2'] = last_3_prices[-2]
+input_df['rolling_mean_3'] = np.mean(last_3_prices)
 
-pred_raw = model.predict([input_x])
-pred_price = scaler.inverse_transform(pred_raw.reshape(-1, 1))[0][0]
+# 3. Fill the Category dummy (One-hot encoding)
+cat_col = f"cat_{selected_cat}" 
+if cat_col in input_df.columns:
+    input_df[cat_col] = 1
+
+# 4. Scale and Predict (Variable name changed to pred_price to match card)
+input_scaled = scaler.transform(input_df)
+pred_price = model.predict(input_scaled)[0]
 
 # Confidence Logic
 volatility = comm_df['price_nominal_usd'].tail(12).std() / comm_df['price_nominal_usd'].tail(12).mean()
@@ -93,7 +96,7 @@ conf_color = "#3fb950" if conf_level == "HIGH" else "#d29922" if conf_level == "
 st.title("🌐 Institutional Commodity Intelligence")
 st.caption(f"Real-time analysis for {selected_comm} | Data Coverage: 1960 - 2026")
 
-# ROW 1: KPI TILES (Matching sheeba1.jpeg)
+# KPI TILES
 k1, k2, k3, k4, k5 = st.columns(5)
 with k1: st.markdown(f'<div class="metric-card"><div class="metric-label">Total Records</div><div class="metric-value">{len(df):,}</div></div>', unsafe_allow_html=True)
 with k2: st.markdown(f'<div class="metric-card"><div class="metric-label">Market Price</div><div class="metric-value">${current_price:,.2f}</div></div>', unsafe_allow_html=True)
@@ -105,7 +108,7 @@ with k5:
 
 st.markdown("---")
 
-# ROW 2: PRIMARY CHARTS
+# PRIMARY CHARTS
 c1, c2 = st.columns([2, 1])
 
 with c1:
@@ -122,37 +125,15 @@ with c1:
 
 with c2:
     st.subheader(f"🍩 {selected_cat} Internal Share")
-    
-    # 1. Filter: Neenga select panna category-oda data-vai mattum edukkum
-    # Ithu dhaan chart-ai interactive-aa mathum
     filtered_cat_df = df[df['category'] == selected_cat]
-    
-    # 2. Aggregation: Andha category-kula ulla commodities-oda average price
     donut_data = filtered_cat_df.groupby('commodity_name')['price_nominal_usd'].mean().sort_values(ascending=False).head(10).reset_index()
     
-    # 3. Chart: Plotly Donut
-    fig_donut = px.pie(
-        donut_data, 
-        values='price_nominal_usd', 
-        names='commodity_name', 
-        hole=0.6, 
-        template="plotly_dark",
-        color_discrete_sequence=px.colors.sequential.Greens_r # Green theme for professional look
-    )
-    
-    # 4. Styling: Legend-ai thookitu labels-ai kulla kondu varum
-    fig_donut.update_layout(
-        showlegend=False, 
-        margin=dict(l=20, r=20, t=20, b=20),
-        annotations=[dict(text='Price<br>Share', x=0.5, y=0.5, font_size=14, showarrow=False)]
-    )
-    
-    # Text labels-ai chart mela kaata
+    fig_donut = px.pie(donut_data, values='price_nominal_usd', names='commodity_name', hole=0.6, template="plotly_dark", color_discrete_sequence=px.colors.sequential.Greens_r)
+    fig_donut.update_layout(showlegend=False, margin=dict(l=20, r=20, t=20, b=20), annotations=[dict(text='Price<br>Share', x=0.5, y=0.5, font_size=14, showarrow=False)])
     fig_donut.update_traces(textposition='inside', textinfo='percent+label')
-    
     st.plotly_chart(fig_donut, use_container_width=True)
 
-# ROW 3: EXTRA ANALYSIS CHARTS
+# EXTRA ANALYSIS
 st.markdown("---")
 b1, b2 = st.columns(2)
 
@@ -169,6 +150,5 @@ with b2:
     fig_m = px.line(m_avg, x='month', y='price_nominal_usd', markers=True, template="plotly_dark", color_discrete_sequence=['#58a6ff'])
     st.plotly_chart(fig_m, use_container_width=True)
 
-# FOOTER DATA TABLE
 st.subheader("📋 Recent Market Data Explorer")
 st.dataframe(comm_df[['date', 'price_nominal_usd', 'unit']].tail(15).sort_values('date', ascending=False), use_container_width=True)
