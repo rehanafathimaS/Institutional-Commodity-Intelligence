@@ -87,10 +87,25 @@ if cat_col in input_df.columns:
 input_scaled = scaler.transform(input_df)
 pred_price = model.predict(input_scaled)[0]
 
-# Confidence Logic
-volatility = comm_df['price_nominal_usd'].tail(12).std() / comm_df['price_nominal_usd'].tail(12).mean()
-conf_level = "HIGH" if volatility < 0.12 else "MODERATE" if volatility < 0.22 else "LOW"
-conf_color = "#3fb950" if conf_level == "HIGH" else "#d29922" if conf_level == "MODERATE" else "#f85149"
+# Confidence Logic Fix
+recent_data = comm_df['price_nominal_usd'].tail(12)
+if len(recent_data) > 1:
+    # Standard deviation-ai average price-aal divide panni volatility edukkurom
+    cv = recent_data.std() / recent_data.mean()
+    
+    # Intha thresholds unga dynamic price change-kku yethapadi set panniyachu
+    if cv < 0.05:  # Price stable-aa irundha
+        conf_level = "HIGH"
+        conf_color = "#3fb950"
+    elif cv < 0.15: # Price fluctuation normal-aa irundha
+        conf_level = "MODERATE"
+        conf_color = "#d29922"
+    else:           # Price adhigamaa maarite irundha
+        conf_level = "LOW"
+        conf_color = "#f85149"
+else:
+    conf_level = "MODERATE"
+    conf_color = "#d29922"
 
 # --- 6. MAIN DASHBOARD ---
 st.title("🌐 Institutional Commodity Intelligence")
